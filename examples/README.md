@@ -14,16 +14,14 @@ npm run dev
 Ajuste as variáveis no arquivo `.env` para experimentar diferentes configurações:
 
 ```env
-RATE_LIMIT_MAX_CONCURRENT=5
-RATE_LIMIT_MIN_TIME=200
-RATE_LIMIT_RESERVOIR=100
-RATE_LIMIT_RESERVOIR_REFRESH_AMOUNT=100
-RATE_LIMIT_RESERVOIR_REFRESH_INTERVAL=60000
+MAX_CONCURRENT=5
+RESERVOIR=100
+RESERVOIR_REFRESH_AMOUNT=100
+RESERVOIR_REFRESH_INTERVAL=60000
 ```
 
 ## Cenários de Teste
 
 1. **Alta Concorrência**: Aumentar `MAX_CONCURRENT` para 10+
-2. **Rate Limiting Agressivo**: Reduzir `MIN_TIME` para 50ms
-3. **Limite de Requisições**: Usar `RESERVOIR` com valores baixos
-4. **Recuperação Gradual**: Ajustar `RESERVOIR_REFRESH_INTERVAL`
+2. **Limite de Requisições**: Usar `RESERVOIR` com valores baixos
+3. **Recuperação Gradual**: Ajustar `RESERVOIR_REFRESH_INTERVAL`

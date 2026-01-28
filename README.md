@@ -57,25 +57,32 @@ cp .env.example .env
 Edite o arquivo `.env` conforme necessário. Principais configurações:
 
 ```env
-# RabbitMQ
+# RabbitMQ Configuration
 RABBITMQ_URL=amqp://guest:guest@localhost:5672
 RABBITMQ_QUEUE=bottleneck-queue
+# RABBITMQ_EXCHANGE=                # Opcional: use exchange e routing key
+# RABBITMQ_ROUTING_KEY=             # ao invés de envio direto para a fila
 
-# Redis (para Bottleneck)
+# Redis Configuration (for Bottleneck)
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_PASSWORD=                     # Opcional: senha do Redis
+REDIS_DB=0                          # Database do Redis (padrão: 0)
 
-# Bottleneck - Configurações de Rate Limiting
-RATE_LIMIT_MAX_CONCURRENT=5        # Máximo de execuções simultâneas
-RATE_LIMIT_MIN_TIME=200            # Tempo mínimo entre execuções (ms)
-RATE_LIMIT_RESERVOIR=100           # Limite total de execuções
-RATE_LIMIT_RESERVOIR_REFRESH_AMOUNT=100  # Quantidade de reposição
-RATE_LIMIT_RESERVOIR_REFRESH_INTERVAL=60000  # Intervalo de reposição (ms)
+# Bottleneck Configuration - Rate Limiting
+MAX_CONCURRENT=200                  # Máximo de execuções simultâneas
+# RESERVOIR=100                     # Opcional: Limite total de execuções
+# RESERVOIR_REFRESH_AMOUNT=100      # Opcional: Quantidade de reposição
+# RESERVOIR_REFRESH_INTERVAL=60000  # Opcional: Intervalo de reposição (ms)
 
-# Temporal
+# Temporal Configuration
 TEMPORAL_ADDRESS=localhost:7233
 TEMPORAL_NAMESPACE=default
 TEMPORAL_TASK_QUEUE=bottleneck-task-queue
+
+# Application Configuration
+NODE_ENV=development
+LOG_LEVEL=info                      # Níveis: error, warn, info, debug
 ```
 
 ### 4. Build do projeto
@@ -319,25 +326,21 @@ bottleneck_lab/
 
 O Bottleneck pode ser ajustado através das variáveis de ambiente:
 
-### `RATE_LIMIT_MAX_CONCURRENT` (padrão: 5)
+### `MAX_CONCURRENT` (padrão: 5)
 
 Número máximo de jobs executando simultaneamente.
 
-### `RATE_LIMIT_MIN_TIME` (padrão: 200ms)
+### `RESERVOIR` (padrão: 100)
 
-Tempo mínimo entre o início de cada job. Útil para evitar rajadas de requisições.
+Número máximo de jobs que podem ser executados em um período. Quando o reservoir se esgota, novos jobs aguardam o refresh. Esta variável é opcional.
 
-### `RATE_LIMIT_RESERVOIR` (padrão: 100)
+### `RESERVOIR_REFRESH_AMOUNT` (padrão: 100)
 
-Número máximo de jobs que podem ser executados em um período. Quando o reservoir se esgota, novos jobs aguardam o refresh.
+Quantidade que o reservoir é reabastecido a cada intervalo. Esta variável é opcional.
 
-### `RATE_LIMIT_RESERVOIR_REFRESH_AMOUNT` (padrão: 100)
+### `RESERVOIR_REFRESH_INTERVAL` (padrão: 60000ms)
 
-Quantidade que o reservoir é reabastecido a cada intervalo.
-
-### `RATE_LIMIT_RESERVOIR_REFRESH_INTERVAL` (padrão: 60000ms)
-
-Intervalo de tempo para reabastecimento do reservoir.
+Intervalo de tempo para reabastecimento do reservoir. Esta variável é opcional.
 
 ## 🎯 Cenários de Teste
 
@@ -361,8 +364,7 @@ Observe no Consumer que o Bottleneck limita a taxa de processamento conforme con
 Ajuste `.env`:
 
 ```env
-RATE_LIMIT_MAX_CONCURRENT=10
-RATE_LIMIT_MIN_TIME=50
+MAX_CONCURRENT=10
 ```
 
 Reinicie consumer e envie 200 mensagens:
@@ -376,9 +378,9 @@ npm run producer -- --count 200
 Ajuste `.env`:
 
 ```env
-RATE_LIMIT_RESERVOIR=50
-RATE_LIMIT_RESERVOIR_REFRESH_AMOUNT=50
-RATE_LIMIT_RESERVOIR_REFRESH_INTERVAL=10000
+RESERVOIR=50
+RESERVOIR_REFRESH_AMOUNT=50
+RESERVOIR_REFRESH_INTERVAL=10000
 ```
 
 Envie 100 mensagens e observe o Bottleneck depleting:
@@ -493,11 +495,10 @@ npm run test:coverage
 
 As configurações do Bottleneck podem ser ajustadas no arquivo `.env`:
 
-- `RATE_LIMIT_MAX_CONCURRENT`: Número máximo de execuções simultâneas
-- `RATE_LIMIT_MIN_TIME`: Tempo mínimo entre execuções (ms)
-- `RATE_LIMIT_RESERVOIR`: Limite total de execuções
-- `RATE_LIMIT_RESERVOIR_REFRESH_AMOUNT`: Quantidade de reposição
-- `RATE_LIMIT_RESERVOIR_REFRESH_INTERVAL`: Intervalo de reposição (ms)
+- `MAX_CONCURRENT`: Número máximo de execuções simultâneas
+- `RESERVOIR`: Limite total de execuções (opcional)
+- `RESERVOIR_REFRESH_AMOUNT`: Quantidade de reposição (opcional)
+- `RESERVOIR_REFRESH_INTERVAL`: Intervalo de reposição (ms, opcional)
 
 ## 📊 Interfaces Web
 
