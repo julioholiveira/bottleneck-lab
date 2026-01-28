@@ -1,0 +1,161 @@
+services:
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: bottleneck-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis (for Bottleneck state management)
+  redis:
+    image: redis:7-alpine
+    container_name: bottleneck-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # PostgreSQL (for Temporal)
+  postgres:
+    image: postgres:15-alpine
+    container_name: bottleneck-postgres
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Temporal Server
+  temporal:
+    image: temporalio/auto-setup:1.22.4
+    container_name: bottleneck-temporal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgres
+      - SKIP_SCHEMA_SETUP=false
+      - SKIP_DEFAULT_NAMESPACE_CREATION=false
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "pgrep temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # Temporal Web UI
+  temporal-ui:
+    image: temporalio/ui:2.21.3
+    container_name: bottleneck-temporal-ui
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"
+
+  # Application - Producer
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bottleneck-producer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: ["npm", "run", "producer"]
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+    restart: unless-stopped
+
+  # Application - Consumer
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bottleneck-consumer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - TEMPORAL_ADDRESS=temporal:7233
+      - RATE_LIMIT_MAX_CONCURRENT=5
+      - RATE_LIMIT_MIN_TIME=200
+    command: ["npm", "run", "consumer"]
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+    restart: unless-stopped
+
+  # Application - Temporal Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bottleneck-worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=bottleneck-task-queue
+    command: ["npm", "run", "worker"]
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
+  redis_data:
+  postgres_data:
