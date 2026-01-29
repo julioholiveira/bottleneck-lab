@@ -25,7 +25,7 @@ export const redisConfig: RedisConfig = {
 
 export const bottleneckConfig: BottleneckConfig = {
   maxConcurrent: parseEnvInt('MAX_CONCURRENT', 5),
-  minTime: Math.ceil(1000/(parseEnvInt('MAX_CONCURRENT', 5))),
+  minTime: Math.ceil(1000 / parseEnvInt('MAX_CONCURRENT', 5)),
   // reservoir: process.env.RESERVOIR
   //   ? parseInt(process.env.RESERVOIR, 10)
   //   : undefined,

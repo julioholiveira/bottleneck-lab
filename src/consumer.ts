@@ -9,19 +9,22 @@ async function processMessage(
   messageStr: string,
   bottleneckService: BottleneckService,
   temporalService: TemporalService,
+  ack: () => void,
+  _nack: (requeue: boolean) => void, // eslint-disable-line @typescript-eslint/no-unused-vars
 ): Promise<void> {
-  const message: Message = JSON.parse(messageStr);
+  const message = JSON.parse(messageStr) as Message;
   logger.debug(`Received message: ${message.id}`);
 
   await bottleneckService.schedule(async () => {
     const workflowId = `process-message-${message.id}`;
     await temporalService.startWorkflow('processMessageWorkflow', [messageStr], workflowId);
+    ack();
     logger.info(`Message ${message.id} sent to Temporal`);
   });
 }
 
 async function main(): Promise<void> {
-  const rabbitmqService = new RabbitMQService(config.rabbitmq);
+  const rabbitmqService = new RabbitMQService(config.rabbitmq, config.bottleneck);
   const bottleneckService = new BottleneckService(config.bottleneck, config.redis);
   const temporalService = new TemporalService(config.temporal);
 
@@ -44,9 +47,8 @@ async function main(): Promise<void> {
   // Start consuming messages
   await rabbitmqService.consume(async (messageStr, ack, nack) => {
     try {
-      await processMessage(messageStr, bottleneckService, temporalService);
+      await processMessage(messageStr, bottleneckService, temporalService, ack, nack);
       processedCount++;
-      ack();
     } catch (error) {
       logger.error('Failed to process message', error);
       errorCount++;
@@ -56,13 +58,9 @@ async function main(): Promise<void> {
 
   logger.info('Consumer is running. Press Ctrl+C to stop.');
 
-  // Log stats periodically
-  setInterval(() => {
-    const counts = bottleneckService.getJobCounts();
-    logger.info(
-      `Stats - Processed: ${processedCount}, Errors: ${errorCount}, Bottleneck: ${JSON.stringify(counts)}`,
-    );
-  }, 10000);
+  shutdown.register(() => {
+    logger.info(`Processed messages: ${processedCount}, Errors: ${errorCount}`);
+  });
 }
 
 // Start the consumer

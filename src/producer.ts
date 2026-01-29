@@ -82,7 +82,7 @@ async function sendMessages(
 }
 
 async function main(): Promise<void> {
-  const rabbitmqService = new RabbitMQService(config.rabbitmq);
+  const rabbitmqService = new RabbitMQService(config.rabbitmq, config.bottleneck);
 
   const shutdown = new ShutdownManager('Producer');
   shutdown.register(() => rabbitmqService.close());

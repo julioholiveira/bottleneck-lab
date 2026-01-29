@@ -32,7 +32,7 @@ export class BottleneckService {
       },
       Redis,
       maxConcurrent: this.bottleneckConfig.maxConcurrent,
-      // minTime: this.bottleneckConfig.minTime,
+      minTime: this.bottleneckConfig.minTime,
       // reservoir: this.bottleneckConfig.reservoir,
       // reservoirRefreshAmount: this.bottleneckConfig.reservoirRefreshAmount,
       // reservoirRefreshInterval: this.bottleneckConfig.reservoirRefreshInterval,

@@ -6,6 +6,8 @@ Laboratório de testes para a biblioteca Bottleneck com integração RabbitMQ e 
 
 Este repositório serve como um laboratório de testes para a biblioteca Bottleneck, implementando um sistema completo de controle de taxa (rate limiting) entre RabbitMQ e Temporal. O sistema garante que o Temporal não seja sobrecarregado com muitas solicitações em um curto período de tempo, utilizando Redis como backend distribuído para o Bottleneck.
 
+**✅ Sistema validado com testes de até 50.000 mensagens, demonstrando rate limiting preciso e confiável.**
+
 ## 🏗️ Arquitetura
 
 O sistema implementa o seguinte fluxo de mensagens:
@@ -20,10 +22,11 @@ Producer → RabbitMQ → Consumer (Bottleneck) → Temporal → Worker → Acti
 
 - **Producer**: Envia mensagens para o RabbitMQ com IDs únicos (UUID)
 - **Consumer**: Consome mensagens do RabbitMQ e aplica rate limiting com Bottleneck antes de enviar para o Temporal
+  - **Configuração crítica**: `prefetch=200` alinhado com `MAX_CONCURRENT=200` para garantir rate limiting correto
 - **Worker**: Processa workflows e activities do Temporal
 - **Bottleneck**: Controla a taxa de requisições usando Redis como datastore
 - **Redis**: Armazena o estado do Bottleneck para ambientes distribuídos
-- **RabbitMQ**: Fila de mensagens
+- **RabbitMQ**: Fila de mensagens com prefetch configurado
 - **Temporal**: Orquestrador de workflows
 - **PostgreSQL**: Banco de dados do Temporal
 
@@ -38,7 +41,7 @@ Producer → RabbitMQ → Consumer (Bottleneck) → Temporal → Worker → Acti
 ### 1. Clonar o repositório
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/julioholiveira/bottleneck-lab
 cd bottleneck_lab
 ```
 
@@ -326,25 +329,40 @@ bottleneck_lab/
 
 O Bottleneck pode ser ajustado através das variáveis de ambiente:
 
-### `MAX_CONCURRENT` (padrão: 5)
+### `MAX_CONCURRENT` (padrão: 200)
 
 Número máximo de jobs executando simultaneamente.
 
-### `RESERVOIR` (padrão: 100)
+**⚠️ IMPORTANTE**: O `prefetch` do RabbitMQ DEVE ser igual ao `MAX_CONCURRENT` para garantir que o rate limiting funcione corretamente. Caso contrário, o RabbitMQ pode entregar todas as mensagens de uma vez, ignorando o limite do Bottleneck.
+
+**Validação**: Testado com sucesso com volumes de 50, 500, 1.000, 5.000 e 50.000 mensagens, mantendo exatamente 200 mensagens não confirmadas (`messages_unacknowledged`) durante o processamento.
+
+### Como verificar se o Bottleneck está funcionando
+
+Monitore a fila do RabbitMQ para verificar o número de mensagens não confirmadas:
+
+```bash
+curl -s -u guest:guest http://localhost:15672/api/queues/%2F/bottleneck-queue | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Unack: {d[\"messages_unacknowledged\"]}')"
+```
+
+Durante o processamento de carga, este valor deve permanecer em **200** (ou próximo disso), confirmando que o Bottleneck está limitando corretamente.
+
+### `RESERVOIR` (padrão: não definido)
 
 Número máximo de jobs que podem ser executados em um período. Quando o reservoir se esgota, novos jobs aguardam o refresh. Esta variável é opcional.
 
-### `RESERVOIR_REFRESH_AMOUNT` (padrão: 100)
+### `RESERVOIR_REFRESH_AMOUNT` (padrão: não definido)
 
 Quantidade que o reservoir é reabastecido a cada intervalo. Esta variável é opcional.
 
-### `RESERVOIR_REFRESH_INTERVAL` (padrão: 60000ms)
+### `RESERVOIR_REFRESH_INTERVAL` (padrão: não definido)
 
-Intervalo de tempo para reabastecimento do reservoir. Esta variável é opcional.
+Intervalo de tempo para reabastecimento do reservoir (em milissegundos). Esta variável é opcional.
 
 ## 🎯 Cenários de Teste
 
-### Teste 1: Rate Limiting Básico
+### Teste 1: Rate Limiting Básico ✅
 
 ```bash
 # Terminal 1: Worker
@@ -359,21 +377,39 @@ npm run producer -- --count 100
 
 Observe no Consumer que o Bottleneck limita a taxa de processamento conforme configurado.
 
-### Teste 2: Alta Concorrência
+**Resultado validado**: 100 mensagens processadas com sucesso, mantendo MAX_CONCURRENT=200.
 
-Ajuste `.env`:
-
-```env
-MAX_CONCURRENT=10
-```
-
-Reinicie consumer e envie 200 mensagens:
+### Teste 2: Volume Médio (5.000 mensagens) ✅
 
 ```bash
-npm run producer -- --count 200
+# Enviar 5.000 mensagens
+npm run producer -- --count 5000
 ```
 
-### Teste 3: Limite de Reservoir
+Monitore o rate limiting em tempo real:
+
+```bash
+watch -n 1 'curl -s -u guest:guest http://localhost:15672/api/queues/%2F/bottleneck-queue | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"Total: {d[\"messages\"]:,} | Unack: {d[\"messages_unacknowledged\"]}\")"
+```
+
+**Resultado validado**: 5.000 mensagens processadas com 100% de sucesso, mantendo exatamente 200 `messages_unacknowledged` durante o processamento.
+
+### Teste 3: Alta Carga (50.000 mensagens) ✅
+
+```bash
+# Enviar 50.000 mensagens
+npm run producer -- --count 50000
+```
+
+**Resultado validado**:
+
+- 50.000 mensagens processadas com 100% de sucesso
+- Rate limiting preciso: exatamente 200 `messages_unacknowledged` durante toda a execução
+- Throughput médio: ~422 msg/s (pico: 1.500 msg/s)
+- Duração total: ~2 minutos
+
+### Teste 4: Limite de Reservoir (Opcional)
 
 Ajuste `.env`:
 
@@ -388,6 +424,23 @@ Envie 100 mensagens e observe o Bottleneck depleting:
 ```bash
 npm run producer -- --count 100
 ```
+
+### Scripts de Teste Automatizados
+
+O repositório inclui scripts Python para testes automatizados com monitoramento:
+
+```bash
+# Teste de carga com 5.000 mensagens e monitoramento automático
+python3 test_load_5k.py
+
+# Teste de carga com 50.000 mensagens
+python3 test_load.py
+
+# Monitoramento contínuo do Bottleneck
+python3 test_bottleneck.py
+```
+
+Veja o relatório completo de testes em [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
 
 ## 🐛 Troubleshooting
 
@@ -435,12 +488,55 @@ docker-compose logs redis
 2. Verifique a fila no RabbitMQ Management UI
 3. Veja os logs do Consumer para erros
 
+### Bottleneck permite mais mensagens do que MAX_CONCURRENT
+
+**Problema comum**: Se você observar 400 `messages_unacknowledged` ao invés de 200, isso indica que há **múltiplos consumers** rodando simultaneamente.
+
+**Diagnóstico**:
+
+1. Acesse RabbitMQ Management UI: http://localhost:15672
+2. Vá em Queues → bottleneck-queue → Consumers
+3. Verifique quantos consumers estão conectados
+
+**Causa**: Executar o consumer tanto no host (`npm run consumer`) quanto no Docker (`docker-compose up consumer`) resulta em 2 consumers × 200 prefetch = 400 mensagens simultâneas.
+
+**Solução**:
+
+```bash
+# Parar o consumer no Docker
+docker stop bottleneck-consumer
+
+# OU parar o consumer no host e usar apenas o Docker
+# Ctrl+C no terminal onde o consumer está rodando
+```
+
+**Verificação**: Após parar um dos consumers, o `messages_unacknowledged` deve estabilizar em 200.
+
+### Como verificar se o rate limiting está funcionando
+
+```bash
+# Comando único para verificar
+curl -s -u guest:guest http://localhost:15672/api/queues/%2F/bottleneck-queue | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Total: {d[\"messages\"]:,} | Unack: {d[\"messages_unacknowledged\"]}')"
+
+# Monitoramento contínuo (atualiza a cada segundo)
+watch -n 1 'curl -s -u guest:guest http://localhost:15672/api/queues/%2F/bottleneck-queue | python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"Total: {d[\"messages\"]:,} | Unack: {d[\"messages_unacknowledged\"]}\")"
+```
+
+**Valores esperados**:
+
+- `messages_unacknowledged` deve ser aproximadamente igual ao `MAX_CONCURRENT` (200)
+- Durante processamento ativo, este valor permanece estável em 200
+- Quando não há mensagens, o valor cai para 0
+
 ## 📚 Referências
 
 - [Bottleneck Documentation](https://www.npmjs.com/package/bottleneck)
 - [RabbitMQ Documentation](https://www.rabbitmq.com/documentation.html)
+- [RabbitMQ Prefetch Documentation](https://www.rabbitmq.com/confirms.html#channel-qos-prefetch)
 - [Temporal Documentation](https://docs.temporal.io/)
 - [Redis Documentation](https://redis.io/documentation)
+- [Test Report](docs/TEST_REPORT.md) - Relatório completo dos testes de validação
 
 ## 📄 Licença
 

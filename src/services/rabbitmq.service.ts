@@ -1,15 +1,17 @@
 import * as amqp from 'amqplib';
 import { Logger } from '../utils';
-import { RabbitMQConfig } from '../models';
+import { BottleneckConfig, RabbitMQConfig } from '../models';
 
 export class RabbitMQService {
   private connection: amqp.Connection | null = null;
   private channel: amqp.Channel | null = null;
   private readonly logger: Logger;
   private readonly config: RabbitMQConfig;
+  private readonly bottleneckConfig: BottleneckConfig;
 
-  constructor(config: RabbitMQConfig) {
+  constructor(config: RabbitMQConfig, bottleneckConfig: BottleneckConfig) {
     this.config = config;
+    this.bottleneckConfig = bottleneckConfig;
     this.logger = new Logger('RabbitMQService');
   }
 
@@ -31,6 +33,10 @@ export class RabbitMQService {
     this.channel = await (this.connection as any).createChannel();
 
     if (this.channel) {
+      // Set prefetch to limit unacknowledged messages (align with Bottleneck maxConcurrent)
+      // This ensures RabbitMQ doesn't deliver all messages at once
+      await this.channel.prefetch(this.bottleneckConfig.maxConcurrent);
+
       this.channel.on('error', (err) => {
         this.logger.error('RabbitMQ channel error', err);
       });
