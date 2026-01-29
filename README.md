@@ -189,9 +189,13 @@ npm run producer -- --count 10
 
 # Enviar 100 mensagens
 npm run producer -- --count 100
+```
 
-# Enviar 50 mensagens com intervalo de 10ms entre elas
-npm run producer -- --count 50 --interval 10
+Em ambiente Windows:
+
+``` powershell
+# Enviar 50 mensagens
+npm run producer -- --count 50
 ```
 
 ## 📊 Monitoramento
@@ -374,6 +378,8 @@ npm run consumer
 # Terminal 3: Enviar 100 mensagens rapidamente
 npm run producer -- --count 100
 ```
+
+
 
 Observe no Consumer que o Bottleneck limita a taxa de processamento conforme configurado.
 
