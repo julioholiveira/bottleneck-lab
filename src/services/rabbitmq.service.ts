@@ -1,25 +1,26 @@
 import * as amqp from 'amqplib';
 import { Logger } from '../utils';
-import { BottleneckConfig, RabbitMQConfig } from '../models';
+import { RabbitMQConfig } from '../models';
 
 export class RabbitMQService {
-  private connection: amqp.Connection | null = null;
+  private connection: amqp.ChannelModel | null = null;
   private channel: amqp.Channel | null = null;
   private readonly logger: Logger;
   private readonly config: RabbitMQConfig;
-  private readonly bottleneckConfig: BottleneckConfig;
 
-  constructor(config: RabbitMQConfig, bottleneckConfig: BottleneckConfig) {
+  constructor(config: RabbitMQConfig) {
     this.config = config;
-    this.bottleneckConfig = bottleneckConfig;
     this.logger = new Logger('RabbitMQService');
   }
 
   async connect(): Promise<void> {
     this.logger.info(`Connecting to RabbitMQ at ${this.config.url}`);
 
-    // Type cast necessário devido a inconsistência nos tipos do amqplib
-    this.connection = (await amqp.connect(this.config.url)) as unknown as amqp.Connection;
+    this.connection = await amqp.connect(this.config.url);
+
+    if (!this.connection) {
+      throw new Error('Failed to establish RabbitMQ connection');
+    }
 
     this.connection.on('error', (err) => {
       this.logger.error('RabbitMQ connection error', err);
@@ -29,13 +30,12 @@ export class RabbitMQService {
       this.logger.warn('RabbitMQ connection closed');
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.channel = await (this.connection as any).createChannel();
+    this.channel = await this.connection.createChannel();
 
     if (this.channel) {
       // Set prefetch to limit unacknowledged messages (align with Bottleneck maxConcurrent)
       // This ensures RabbitMQ doesn't deliver all messages at once
-      await this.channel.prefetch(this.bottleneckConfig.maxConcurrent);
+      await this.channel.prefetch(100);
 
       this.channel.on('error', (err) => {
         this.logger.error('RabbitMQ channel error', err);
@@ -57,7 +57,7 @@ export class RabbitMQService {
     }
   }
 
-  async publish(message: string): Promise<boolean> {
+  publish(message: string): boolean {
     if (!this.channel) {
       throw new Error('RabbitMQ channel is not initialized. Call connect() first.');
     }
@@ -86,8 +86,7 @@ export class RabbitMQService {
     }
 
     if (this.connection) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (this.connection as any).close();
+      await this.connection.close();
       this.connection = null;
       this.logger.info('RabbitMQ connection closed');
     }

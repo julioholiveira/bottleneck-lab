@@ -59,7 +59,7 @@ async function sendMessages(
     const messageStr = JSON.stringify(message);
 
     try {
-      await rabbitmqService.publish(messageStr);
+      rabbitmqService.publish(messageStr);
       results.success++;
       logger.debug(`Message ${i + 1}/${messageCount} sent: ${message.id}`);
     } catch (error) {
@@ -82,7 +82,7 @@ async function sendMessages(
 }
 
 async function main(): Promise<void> {
-  const rabbitmqService = new RabbitMQService(config.rabbitmq, config.bottleneck);
+  const rabbitmqService = new RabbitMQService(config.rabbitmq);
 
   const shutdown = new ShutdownManager('Producer');
   shutdown.register(() => rabbitmqService.close());

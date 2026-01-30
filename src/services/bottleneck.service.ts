@@ -8,6 +8,7 @@ export class BottleneckService {
   private readonly logger: Logger;
   private readonly bottleneckConfig: BottleneckConfig;
   private readonly redisConfig: RedisConfig;
+  private ackLimiter: Bottleneck | null = null;
 
   constructor(bottleneckConfig: BottleneckConfig, redisConfig: RedisConfig) {
     this.bottleneckConfig = bottleneckConfig;
@@ -24,6 +25,7 @@ export class BottleneckService {
     this.limiter = new Bottleneck({
       id: 'bottleneck-lab-consumer',
       datastore: 'ioredis',
+      clearDatastore: false,
       clientOptions: {
         host: this.redisConfig.host,
         port: this.redisConfig.port,
@@ -31,11 +33,34 @@ export class BottleneckService {
         db: this.redisConfig.db,
       },
       Redis,
-      maxConcurrent: this.bottleneckConfig.maxConcurrent,
-      minTime: this.bottleneckConfig.minTime,
-      // reservoir: this.bottleneckConfig.reservoir,
-      // reservoirRefreshAmount: this.bottleneckConfig.reservoirRefreshAmount,
-      // reservoirRefreshInterval: this.bottleneckConfig.reservoirRefreshInterval,
+      maxConcurrent: this.bottleneckConfig.maxConcurrent, // ← Processa 1 ack por vez (sequencial)
+      minTime: this.bottleneckConfig.minTime, // ← 1000ms / 50 = 20ms entre cada ack
+      reservoir: null, // ← Desabilita reservoir, usa apenas minTime
+    });
+
+    // Criar um limitador separado para acks
+    this.ackLimiter = new Bottleneck({
+      id: 'bottleneck-lab-ack',
+      datastore: 'ioredis',
+      clearDatastore: false,
+      clientOptions: {
+        host: this.redisConfig.host,
+        port: this.redisConfig.port,
+        password: this.redisConfig.password,
+        db: this.redisConfig.db,
+      },
+      Redis,
+      maxConcurrent: 50, // ← Processa 1 ack por vez (sequencial)
+      minTime: 20, // ← 1000ms / 50 = 20ms entre cada ack
+      reservoir: null, // ← Desabilita reservoir, usa apenas minTime
+    });
+
+    this.ackLimiter.on('depleted', () => {
+      this.logger.warn('Ack limiter reservoir depleted - waiting for refresh');
+    });
+
+    this.ackLimiter.on('error', (err) => {
+      this.logger.error('Ack limiter error', err);
     });
 
     this.limiter.on('error', (err) => {
@@ -54,7 +79,22 @@ export class BottleneckService {
       throw new Error('Bottleneck is not initialized. Call connect() first.');
     }
 
+    this.limiter?.updateSettings({
+      maxConcurrent: this.bottleneckConfig.maxConcurrent,
+      minTime: this.bottleneckConfig.minTime,
+      reservoir: this.bottleneckConfig.reservoir,
+      reservoirRefreshAmount: this.bottleneckConfig.reservoirRefreshAmount,
+      reservoirRefreshInterval: this.bottleneckConfig.reservoirRefreshInterval,
+    });
+
     return this.limiter.schedule(fn);
+  }
+
+  async scheduleAck<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.ackLimiter) {
+      throw new Error('Ack limiter is not initialized.');
+    }
+    return this.ackLimiter.schedule(fn);
   }
 
   async close(): Promise<void> {
@@ -62,6 +102,13 @@ export class BottleneckService {
       await this.limiter.stop({ dropWaitingJobs: false });
       this.limiter = null;
       this.logger.info('Bottleneck stopped');
+    }
+
+    if (this.ackLimiter) {
+      await this.ackLimiter.stop({ dropWaitingJobs: false });
+      await this.ackLimiter.disconnect();
+      this.ackLimiter = null;
+      this.logger.info('Ack limiter stopped');
     }
   }
 

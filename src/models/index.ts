@@ -22,9 +22,9 @@ export interface RedisConfig {
 export interface BottleneckConfig {
   maxConcurrent: number;
   minTime: number;
-  // reservoir?: number;
-  // reservoirRefreshAmount?: number;
-  // reservoirRefreshInterval?: number;
+  reservoir?: number | null;
+  reservoirRefreshAmount?: number | null;
+  reservoirRefreshInterval?: number | null;
 }
 
 export interface TemporalConfig {

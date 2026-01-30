@@ -104,7 +104,6 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=redis_pass
     command: ["npm", "run", "producer"]
     volumes:
       - ./src:/app/src
@@ -128,7 +127,6 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=redis_pass
       - TEMPORAL_ADDRESS=temporal:7233
     #   - RATE_LIMIT_MAX_CONCURRENT=5
     #   - RATE_LIMIT_MIN_TIME=200
