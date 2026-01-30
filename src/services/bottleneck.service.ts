@@ -32,7 +32,7 @@ export class BottleneckService {
         db: this.redisConfig.db,
       },
       Redis,
-      maxConcurrent: null, // ← Sem limite de concorrência
+      maxConcurrent: this.bottleneckConfig.maxConcurrent,
       minTime: this.bottleneckConfig.minTime, // ← 1000ms / 50 = 20ms entre cada ack
       reservoir: null, // ← Sem limite inicial
     });
