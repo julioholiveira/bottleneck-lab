@@ -26,13 +26,6 @@ export const redisConfig: RedisConfig = {
 export const bottleneckConfig: BottleneckConfig = {
   maxConcurrent: parseEnvInt('MAX_CONCURRENT', 5),
   minTime: parseEnvInt('MIN_TIME', 1000),
-  reservoir: process.env.RESERVOIR ? parseInt(process.env.RESERVOIR, 10) : null,
-  reservoirRefreshAmount: process.env.RESERVOIR_REFRESH_AMOUNT
-    ? parseInt(process.env.RESERVOIR_REFRESH_AMOUNT, 10)
-    : null,
-  reservoirRefreshInterval: process.env.RESERVOIR_REFRESH_INTERVAL
-    ? parseInt(process.env.RESERVOIR_REFRESH_INTERVAL, 10)
-    : null,
 };
 
 export const temporalConfig: TemporalConfig = {
