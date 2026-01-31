@@ -12,8 +12,7 @@ const parseEnvInt = (key: string, defaultValue: number): number => {
 export const rabbitmqConfig: RabbitMQConfig = {
   url: process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
   queue: process.env.RABBITMQ_QUEUE || 'bottleneck-queue',
-  exchange: process.env.RABBITMQ_EXCHANGE,
-  routingKey: process.env.RABBITMQ_ROUTING_KEY,
+  prefetchCount: parseEnvInt('RABBITMQ_PREFETCH_COUNT', 10),
 };
 
 export const redisConfig: RedisConfig = {
@@ -24,8 +23,8 @@ export const redisConfig: RedisConfig = {
 };
 
 export const bottleneckConfig: BottleneckConfig = {
-  maxConcurrent: parseEnvInt('MAX_CONCURRENT', 5),
-  minTime: parseEnvInt('MIN_TIME', 1000),
+  maxConcurrent: parseEnvInt('MAX_CONCURRENT', 50),
+  minTime: parseEnvInt('MIN_TIME', 20),
 };
 
 export const temporalConfig: TemporalConfig = {

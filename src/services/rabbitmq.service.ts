@@ -35,7 +35,7 @@ export class RabbitMQService {
     if (this.channel) {
       // Set prefetch to limit unacknowledged messages (align with Bottleneck maxConcurrent)
       // This ensures RabbitMQ doesn't deliver all messages at once
-      await this.channel.prefetch(100);
+      await this.channel.prefetch(this.config.prefetchCount || 1);
 
       this.channel.on('error', (err) => {
         this.logger.error('RabbitMQ channel error', err);
@@ -46,10 +46,6 @@ export class RabbitMQService {
       });
 
       await this.channel.assertQueue(this.config.queue, { durable: true });
-
-      if (this.config.exchange) {
-        await this.channel.assertExchange(this.config.exchange, 'topic', { durable: true });
-      }
 
       this.logger.info(
         `Successfully connected to RabbitMQ and asserted queue: ${this.config.queue}`,
@@ -69,11 +65,7 @@ export class RabbitMQService {
       timestamp: Date.now(),
     };
 
-    if (this.config.exchange && this.config.routingKey) {
-      this.channel.publish(this.config.exchange, this.config.routingKey, buffer, options);
-    } else {
-      this.channel.sendToQueue(this.config.queue, buffer, options);
-    }
+    this.channel.sendToQueue(this.config.queue, buffer, options);
 
     return true;
   }

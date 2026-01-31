@@ -1,9 +1,9 @@
 # Laboratório de testes da biblioteca Bottleneck
 
 ## Descrição
-Este repositório serve como um laboratório de testes para a biblioteca Bottleneck, que é uma biblioteca de limitação de taxa para Node.js e navegadores. O objetivo deste laboratório é experimentar diferentes configurações e cenários de uso da biblioteca Bottleneck para entender melhor seu comportamento e desempenho.
+Este repositório serve como um laboratório (POC) do uso da biblioteca Bottleneck, que é uma biblioteca de limitação de taxa para Node.js e navegadores. O objetivo deste laboratório é experimentar diferentes configurações e cenários de uso da biblioteca Bottleneck para entender melhor seu comportamento e desempenho.
 
-O Bottleneck deverá limitar a taxa (rate limit) entre um RabbitMq e Temporal, ou seja, o sistema deverá enviar uma mensagem para o RabbitMq e o Bottleneck deverá controlar a taxa de consumo dessas mensagens para o Temporal, garantindo que o Temporal não seja sobrecarregado com muitas solicitações em um curto período de tempo.
+O Bottleneck deverá limitar a taxa (rate limit) entre um RabbitMq e Temporal através do ACK, ou seja, o sistema deverá enviar uma mensagem para o RabbitMq e o Bottleneck deverá controlar a taxa de consumo dessas mensagens para o Temporal, garantindo que o Temporal não seja sobrecarregado com muitas solicitações em um curto período de tempo, sempre usando o ACK para controlar o fluxo.
 
 Será utilizado o Context7 via MCP para a geração de código, garantindo que todas as implementações sigam as melhores práticas e padrões estabelecidos.
 
@@ -17,15 +17,13 @@ O Bottleneck deve usar Redis como armazenamento para gerenciar o estado da limit
 
 O Temporal deve ser executado localmente usando Docker para facilitar os testes e garantir um ambiente controlado.
 
-Os testes devem usar Jest para validar o comportamento do Bottleneck sob diferentes condições de carga e configuração.
+Não teremos testes unitários formais, mas o código deve ser escrito de forma clara e modular para facilitar a compreensão e possíveis futuras expansões.
 
 O Eslint deve ser configurado para manter a qualidade do código e garantir a aderência às melhores práticas de desenvolvimento.
 
 A estrutura do Temporal Worker deve ser separada do código de envio e consumo de mensagens, promovendo uma arquitetura modular e de fácil manutenção.
 
 Adicionar os scripts necessários no `package.json` para facilitar a execução dos testes, linting e outras tarefas comuns de desenvolvimento.
-
-Deve existir testes de integração para garantir que o fluxo completo de envio de mensagens do RabbitMq para o Temporal, passando pelo Bottleneck, funcione conforme o esperado.
 
 O producer deverá enviar uma mensagem simples para o RabbitMq, que será consumida pelo consumer. O consumer aplicará a limitação de taxa usando o Bottleneck antes de enviar a mensagem para o Temporal Worker, que processará a mensagem e registrará o resultado.
 
@@ -40,12 +38,11 @@ Por ser tratar de um laboratório de testes, o foco principal é experimentar e 
 
 ## Estrutura do Repositório
 - `src/`: Contém o código-fonte dos testes realizados com a biblioteca Bottleneck. Usar a estrutura de pastas: config/, services/, controllers/, utils/, models/.
-- `tests/`: Inclui os casos de teste que verificam o funcionamento da biblioteca Bottleneck em diferentes situações.
-- `docs/`: Documentação relacionada à biblioteca Bottleneck e aos testes realizados.
+- `docs/`: Documentação relacionada à biblioteca Bottleneck e como criar e executar o ambiente da POC (prova de conceito).
 - `examples/`: Exemplos práticos de uso da biblioteca Bottleneck em diferentes contextos.
 
 ## Infraestrutura
-O repositório utiliza Docker para facilitar a configuração do ambiente de testes. Um arquivo `Dockerfile` está incluído para criar uma imagem Docker com todas as dependências necessárias para executar os testes. 
+O repositório utiliza Docker para facilitar a configuração do ambiente. Um arquivo `Dockerfile` está incluído para criar uma imagem Docker com todas as dependências necessárias. 
 O arquivo `docker-compose.yml` está configurado para orquestrar os serviços necessários, incluindo RabbitMq e Temporal, juntamente com o ambiente de teste do Bottleneck.
 
 ## Observaações Finais

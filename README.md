@@ -22,7 +22,6 @@ Producer → RabbitMQ → Consumer (Bottleneck) → Temporal → Worker → Acti
 
 - **Producer**: Envia mensagens para o RabbitMQ com IDs únicos (UUID)
 - **Consumer**: Consome mensagens do RabbitMQ e aplica rate limiting com Bottleneck antes de enviar para o Temporal
-  - **Configuração crítica**: `prefetch=200` alinhado com `MAX_CONCURRENT=200` para garantir rate limiting correto
 - **Worker**: Processa workflows e activities do Temporal
 - **Bottleneck**: Controla a taxa de requisições usando Redis como datastore
 - **Redis**: Armazena o estado do Bottleneck para ambientes distribuídos
@@ -63,8 +62,7 @@ Edite o arquivo `.env` conforme necessário. Principais configurações:
 # RabbitMQ Configuration
 RABBITMQ_URL=amqp://guest:guest@localhost:5672
 RABBITMQ_QUEUE=bottleneck-queue
-# RABBITMQ_EXCHANGE=                # Opcional: use exchange e routing key
-# RABBITMQ_ROUTING_KEY=             # ao invés de envio direto para a fila
+RABBITMQ_PREFETCH_COUNT=10
 
 # Redis Configuration (for Bottleneck)
 REDIS_HOST=localhost
@@ -73,10 +71,8 @@ REDIS_PASSWORD=                     # Opcional: senha do Redis
 REDIS_DB=0                          # Database do Redis (padrão: 0)
 
 # Bottleneck Configuration - Rate Limiting
-MAX_CONCURRENT=200                  # Máximo de execuções simultâneas
-# RESERVOIR=100                     # Opcional: Limite total de execuções
-# RESERVOIR_REFRESH_AMOUNT=100      # Opcional: Quantidade de reposição
-# RESERVOIR_REFRESH_INTERVAL=60000  # Opcional: Intervalo de reposição (ms)
+MAX_CONCURRENT=50                   # Máximo de execuções simultâneas (prefetch alinhado automaticamente)
+MIN_TIME=20                         # Tempo mínimo entre execuções (ms)
 
 # Temporal Configuration
 TEMPORAL_ADDRESS=localhost:7233
@@ -193,7 +189,7 @@ npm run producer -- --count 100
 
 Em ambiente Windows:
 
-``` powershell
+```powershell
 # Enviar 50 mensagens
 npm run producer -- --count 50
 ```
@@ -333,13 +329,20 @@ bottleneck_lab/
 
 O Bottleneck pode ser ajustado através das variáveis de ambiente:
 
-### `MAX_CONCURRENT` (padrão: 200)
+### `MAX_CONCURRENT` (padrão: 50)
 
 Número máximo de jobs executando simultaneamente.
 
-**⚠️ IMPORTANTE**: O `prefetch` do RabbitMQ DEVE ser igual ao `MAX_CONCURRENT` para garantir que o rate limiting funcione corretamente. Caso contrário, o RabbitMQ pode entregar todas as mensagens de uma vez, ignorando o limite do Bottleneck.
+**Configurações testadas**:
 
-**Validação**: Testado com sucesso com volumes de 50, 500, 1.000, 5.000 e 50.000 mensagens, mantendo exatamente 200 mensagens não confirmadas (`messages_unacknowledged`) durante o processamento.
+- **Desenvolvimento**: MAX_CONCURRENT=50 (padrão)
+- **Alta carga**: MAX_CONCURRENT=200 (testado com 50.000 mensagens)
+
+### `RABBITMQ_PREFETCH_COUNT` (padrão: 10)
+
+Número máximo de mensagens não confirmadas que o RabbitMQ enviará ao consumer. Este valor controla quantas mensagens o consumer pode ter "em processamento" antes que o RabbitMQ pare de enviar novas mensagens.
+
+**Recomendação**: Configure este valor considerando o `MAX_CONCURRENT` do Bottleneck. Um valor muito baixo pode subutilizar o Bottleneck, enquanto um valor muito alto pode acumular mensagens na memória.
 
 ### Como verificar se o Bottleneck está funcionando
 
@@ -350,19 +353,11 @@ curl -s -u guest:guest http://localhost:15672/api/queues/%2F/bottleneck-queue | 
   python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Unack: {d[\"messages_unacknowledged\"]}')"
 ```
 
-Durante o processamento de carga, este valor deve permanecer em **200** (ou próximo disso), confirmando que o Bottleneck está limitando corretamente.
+Durante o processamento de carga, este valor deve permanecer próximo ao `RABBITMQ_PREFETCH_COUNT` configurado, confirmando que o RabbitMQ está controlando o fluxo adequadamente.
 
-### `RESERVOIR` (padrão: não definido)
+### `MIN_TIME` (padrão: 20ms)
 
-Número máximo de jobs que podem ser executados em um período. Quando o reservoir se esgota, novos jobs aguardam o refresh. Esta variável é opcional.
-
-### `RESERVOIR_REFRESH_AMOUNT` (padrão: não definido)
-
-Quantidade que o reservoir é reabastecido a cada intervalo. Esta variável é opcional.
-
-### `RESERVOIR_REFRESH_INTERVAL` (padrão: não definido)
-
-Intervalo de tempo para reabastecimento do reservoir (em milissegundos). Esta variável é opcional.
+Tempo mínimo entre cada execução. Define o intervalo mínimo que deve passar entre o início de dois jobs consecutivos. Com `MIN_TIME=20`, você pode processar até 50 jobs por segundo por worker.
 
 ## 🎯 Cenários de Teste
 
@@ -379,11 +374,9 @@ npm run consumer
 npm run producer -- --count 100
 ```
 
-
-
 Observe no Consumer que o Bottleneck limita a taxa de processamento conforme configurado.
 
-**Resultado validado**: 100 mensagens processadas com sucesso, mantendo MAX_CONCURRENT=200.
+**Resultado validado**: 100 mensagens processadas com sucesso com MAX_CONCURRENT padrão.
 
 ### Teste 2: Volume Médio (5.000 mensagens) ✅
 
@@ -399,7 +392,7 @@ watch -n 1 'curl -s -u guest:guest http://localhost:15672/api/queues/%2F/bottlen
   python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"Total: {d[\"messages\"]:,} | Unack: {d[\"messages_unacknowledged\"]}\")"
 ```
 
-**Resultado validado**: 5.000 mensagens processadas com 100% de sucesso, mantendo exatamente 200 `messages_unacknowledged` durante o processamento.
+**Resultado validado**: 5.000 mensagens processadas com 100% de sucesso. Com MAX_CONCURRENT=200, manteve exatamente 200 `messages_unacknowledged` durante o processamento.
 
 ### Teste 3: Alta Carga (50.000 mensagens) ✅
 
@@ -414,22 +407,6 @@ npm run producer -- --count 50000
 - Rate limiting preciso: exatamente 200 `messages_unacknowledged` durante toda a execução
 - Throughput médio: ~422 msg/s (pico: 1.500 msg/s)
 - Duração total: ~2 minutos
-
-### Teste 4: Limite de Reservoir (Opcional)
-
-Ajuste `.env`:
-
-```env
-RESERVOIR=50
-RESERVOIR_REFRESH_AMOUNT=50
-RESERVOIR_REFRESH_INTERVAL=10000
-```
-
-Envie 100 mensagens e observe o Bottleneck depleting:
-
-```bash
-npm run producer -- --count 100
-```
 
 ### Scripts de Teste Automatizados
 
@@ -531,9 +508,11 @@ watch -n 1 'curl -s -u guest:guest http://localhost:15672/api/queues/%2F/bottlen
 
 **Valores esperados**:
 
-- `messages_unacknowledged` deve ser aproximadamente igual ao `MAX_CONCURRENT` (200)
-- Durante processamento ativo, este valor permanece estável em 200
+- `messages_unacknowledged` deve ser aproximadamente igual ao `MAX_CONCURRENT` configurado
+- Durante processamento ativo, este valor permanece estável
 - Quando não há mensagens, o valor cai para 0
+
+**Exemplo**: Com MAX_CONCURRENT=50, espera-se ~50 mensagens não confirmadas. Com MAX_CONCURRENT=200, espera-se ~200.
 
 ## 📚 Referências
 
@@ -551,74 +530,3 @@ MIT
 ---
 
 **Desenvolvido como laboratório de experimentação com rate limiting distribuído usando Bottleneck, RabbitMQ e Temporal.**
-npm run build
-
-# Executar producer
-
-npm run producer
-
-# Executar consumer (em outro terminal)
-
-npm run consumer
-
-# Executar worker (em outro terminal)
-
-npm run worker
-
-````
-
-## 🧪 Testes
-
-```bash
-# Executar todos os testes
-npm test
-
-# Testes com watch mode
-npm run test:watch
-
-# Testes de integração
-npm run test:integration
-
-# Coverage
-npm run test:coverage
-````
-
-## 📝 Scripts Disponíveis
-
-- `npm run build` - Compila o TypeScript
-- `npm start` - Inicia a aplicação
-- `npm run dev` - Modo de desenvolvimento
-- `npm test` - Executa os testes
-- `npm run lint` - Verifica código com ESLint
-- `npm run lint:fix` - Corrige problemas do ESLint
-- `npm run format` - Formata código com Prettier
-
-## 🔧 Configuração
-
-As configurações do Bottleneck podem ser ajustadas no arquivo `.env`:
-
-- `MAX_CONCURRENT`: Número máximo de execuções simultâneas
-- `RESERVOIR`: Limite total de execuções (opcional)
-- `RESERVOIR_REFRESH_AMOUNT`: Quantidade de reposição (opcional)
-- `RESERVOIR_REFRESH_INTERVAL`: Intervalo de reposição (ms, opcional)
-
-## 📊 Interfaces Web
-
-- **RabbitMQ Management**: http://localhost:15672 (guest/guest)
-- **Temporal UI**: http://localhost:8080
-
-## 📚 Documentação
-
-Veja a pasta [docs/](docs/) para documentação adicional sobre:
-
-- Configuração do Bottleneck
-- Arquitetura do sistema
-- Exemplos de uso
-
-## 🤝 Contribuindo
-
-Este é um projeto de laboratório experimental. Sinta-se à vontade para explorar e modificar.
-
-## 📄 Licença
-
-MIT

@@ -34,7 +34,6 @@ export class BottleneckService {
       Redis,
       maxConcurrent: this.bottleneckConfig.maxConcurrent,
       minTime: this.bottleneckConfig.minTime, // ← 1000ms / 50 = 20ms entre cada ack
-      reservoir: null, // ← Sem limite inicial
     });
 
     this.limiter.on('error', (err) => {

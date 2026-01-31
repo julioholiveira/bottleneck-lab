@@ -8,8 +8,7 @@ export interface Message {
 export interface RabbitMQConfig {
   url: string;
   queue: string;
-  exchange?: string;
-  routingKey?: string;
+  prefetchCount?: number;
 }
 
 export interface RedisConfig {
