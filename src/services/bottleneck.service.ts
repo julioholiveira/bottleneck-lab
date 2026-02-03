@@ -31,9 +31,7 @@ export class BottleneckService {
         password: this.redisConfig.password,
         db: this.redisConfig.db,
       },
-      Redis,
-      maxConcurrent: this.bottleneckConfig.maxConcurrent,
-      minTime: this.bottleneckConfig.minTime, // ← 1000ms / 50 = 20ms entre cada ack
+      Redis: Redis,
     });
 
     this.limiter.on('error', (err) => {
@@ -44,6 +42,11 @@ export class BottleneckService {
       this.logger.warn('Bottleneck reservoir depleted - waiting for refresh');
     });
 
+    this.limiter?.updateSettings({
+      maxConcurrent: this.bottleneckConfig.maxConcurrent,
+      minTime: this.bottleneckConfig.minTime, // ← 1000ms / 50 = 20ms entre cada ack
+    });
+
     this.logger.info('Bottleneck initialized with Redis datastore');
   }
 
@@ -51,11 +54,6 @@ export class BottleneckService {
     if (!this.limiter) {
       throw new Error('Bottleneck is not initialized. Call connect() first.');
     }
-
-    this.limiter?.updateSettings({
-      maxConcurrent: this.bottleneckConfig.maxConcurrent,
-      minTime: this.bottleneckConfig.minTime,
-    });
 
     return this.limiter.schedule(fn);
   }
